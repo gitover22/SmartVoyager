@@ -526,9 +526,6 @@ def get_completion(messages, model="deepseek-chat"):
     )
     return response.choices[0].message
 
-
-
-
 def get_location_coordinate(location, city):
     url = f"https://restapi.amap.com/v5/place/text?key={amap_key}&keywords={location}&region={city}"
     print(url)
@@ -537,7 +534,6 @@ def get_location_coordinate(location, city):
     if "pois" in result and result["pois"]:
         return result["pois"][0]
     return None
-
 
 def search_nearby_pois(longitude, latitude, keyword):
     url = f"https://restapi.amap.com/v5/place/around?key={amap_key}&keywords={keyword}&location={longitude},{latitude}"
@@ -624,9 +620,13 @@ def llm(query, history=[], user_stop_words=[]):
         return str(e)
 
 # Travily 搜索引擎
-os.environ['TAVILY_API_KEY'] = os.environ.get("TAVILY_API_KEY")
-tavily = TavilySearchResults(max_results=5)
-tavily.description = '这是一个类似谷歌和百度的搜索引擎，搜索知识、天气、股票、电影、小说、百科等都是支持的哦，如果你不确定就应该搜索一下，谢谢！'
+if os.environ.get("TAVILY_API_KEY"):
+    os.environ['TAVILY_API_KEY'] = os.environ.get("TAVILY_API_KEY")
+    tavily = TavilySearchResults(max_results=5)
+    tavily.description = '这是一个类似谷歌和百度的搜索引擎，搜索知识、天气、股票、电影、小说、百科等都是支持的哦，如果你不确定就应该搜索一下，谢谢！'
+else:
+    tavily = None
+    print("警告: Tavily API 未配置，搜索功能不可用")
 
 # 工具列表
 tools = [tavily]
@@ -907,8 +907,7 @@ with gr.Blocks(css=css) as demo:
                     chatbot = gr.Chatbot(label="聊天记录",height=521)
         submit_button.click(respond, [msg, chatbot, whether_rag], [msg, chatbot])
         clear_button.click(clear_chat, chatbot, chatbot)        
-        # Weather_APP_KEY = os.environ.get("Weather_APP_KEY")
-        Weather_APP_KEY = '797ab5e76cdf458b82b1283e100b9a5b'
+        Weather_APP_KEY = os.environ.get("Weather_APP_KEY")
         def weather_process(location):
                 api_key = Weather_APP_KEY  # 替换成你的API密钥  
                 location_data = get_location_data(location, api_key)
