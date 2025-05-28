@@ -8,6 +8,7 @@ import io
 import base64
 import random
 import openai
+from openai import OpenAI
 from langchain_community.vectorstores import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyMuPDFLoader
@@ -30,7 +31,7 @@ from dotenv import load_dotenv
 # 加载 .env 文件中的 API Key
 load_dotenv()
 
-openai.api_key = os.environ.get("OPENAI_API_KEY")
+openai.api_key = os.environ["OPENAI_API_KEY"]
 
 # 临时目录设置
 TEMP_IMAGE_DIR = "/tmp/sparkai_images/"
@@ -46,10 +47,18 @@ def chat_with_openai(prompt, history=[]):
         messages.append({"role": "user", "content": h["user"]})
         messages.append({"role": "assistant", "content": h["assistant"]})
     messages.append({"role": "user", "content": prompt})
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=messages
+
+    client = OpenAI()
+    response = client.responses.create(
+        model="gpt-4o",
+        input=messages,
+        stream=False,
     )
+    response = client.responses.create(
+    model="gpt-4o",
+    input=messages,
+    stream=True,
+)
     return response["choices"][0]["message"]["content"]
 
 # 图像理解（使用 GPT-4 Vision 或 OpenAI 的未来图像分析接口，暂简化为占位）  ==== iu
@@ -60,18 +69,17 @@ def image_understanding(prompt: str, temp_image_path: str) -> str:
     base64_img = base64.b64encode(image_bytes).decode("utf-8")
 
     # 调用 OpenAI GPT-4 Vision 接口分析图像
-    response = openai.ChatCompletion.create(
+    client = OpenAI()
+    response = client.responses.create(
         model="gpt-4-vision-preview",
-        messages=[
+        input=[
             {"role": "user", "content": [
                 {"type": "text", "text": prompt},
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_img}"}}
             ]}
-        ],
-        max_tokens=1024
+        ]
     )
     return response['choices'][0]['message']['content']
-
 
 # 文本转语音（TTS）   === t2a
 def text_to_speech(text, filename="output.mp3"):
@@ -115,10 +123,11 @@ def generate_text_from_image(image, style):
     prompt = "请理解这张图片"
     image_description = image_understanding(prompt, temp_image_path)
     question = f"根据图片描述：{image_description}, 用{style}风格生成一段文字。"
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": question}],
-        max_tokens=512
+    
+    client = OpenAI()
+    response = client.responses.create(
+        model="gpt-4o",
+        input=[{"role": "user", "content": question}],
     )
     return response["choices"][0]["message"]["content"]
 
@@ -132,7 +141,6 @@ def text_to_audio(text_input):
     except Exception as e:
         print(f"Error generating audio: {e}")
         return None
-
 
 # 第一阶段：用户上传图片并选择风格后，点击生成文案
 def on_generate_click(image, style):
@@ -179,12 +187,12 @@ def process_audio(audio, history):
             if not audio_text.strip():
                 return "未识别到语音，请重试。", history
 
-            # 使用 GPT-4 生成回复
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": audio_text}]
+            client = OpenAI()
+            response = client.responses.create(
+                model="gpt-4o",
+                input=[{"role": "user", "content": audio_text}],
+                stream=True,
             )["choices"][0]["message"]["content"]
-
             print(f"生成的响应: {response}")
 
             # 更新对话历史
@@ -195,8 +203,6 @@ def process_audio(audio, history):
             return f"处理音频时发生错误: {str(e)}", history
 
     return "无效的音频文件，请上传有效的音频。", history
-
-
 
 rerank_path = './model/rerank_model'
 rerank_model_name = 'BAAI/bge-reranker-large'
@@ -370,10 +376,10 @@ def embedding_make(text_input, pdf_directory):
 
         model_input = f'你是一个旅游攻略小助手，你的任务是，根据收集到的信息：\n{reranked}.\n来精准回答用户所提出的问题：{question}。'
 
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": model_input}],
-            max_tokens=1024,
+        client = OpenAI()
+        response = client.responses.create(
+            model="gpt-4o",
+            input=[{"role": "user", "content": model_input}],
             temperature=0.7
         )
         output = response["choices"][0]["message"]["content"]
@@ -386,10 +392,11 @@ def process_question(history, use_knowledge_base, question, pdf_directory='./dat
     if use_knowledge_base=='是':
         response = embedding_make(question, pdf_directory)
     else:
-        out = openai.ChatCompletion.create(
-            model="gpt-4",  # 可改为 gpt-3.5-turbo 如成本敏感
-            messages=[{"role": "user", "content": question}],
-            max_tokens=1024,
+        client = OpenAI()
+
+        out = client.responses.create(
+            model="gpt-4o",
+            input=[{"role": "user", "content": question}],
             temperature=0.7
         )
         response = out["choices"][0]["message"]["content"]
@@ -454,20 +461,15 @@ def get_weather_forecast(location_id,api_key):
         # 如果请求不成功，打印错误信息  
         print(f"请求失败，状态码：{response.status_code}，错误信息：{response.text}")  
         return None  
-api_key = os.environ.get("api_key")
+
 
 from openai import OpenAI
 client = OpenAI(
-        api_key=api_key,
-        base_url="https://api.deepseek.com"
+        api_key=os.environ["OPENAI_API_KEY"],
+        base_url=os.environ["OPENAI_BASE_URL"]
 )
 
-# client = OpenAI(
-#         api_key='',
-#         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
-# )
-
-amap_key = os.environ.get("amap_key")
+amap_key = os.environ["amap_key"]
 
 def get_completion(messages, model="deepseek-chat"):
     response = client.chat.completions.create(
@@ -602,12 +604,13 @@ def llm(query, history=[], user_stop_words=[]):
             messages.append({'role': 'user', 'content': hist[0]})
             messages.append({'role': 'assistant', 'content': hist[1]})
         messages.append({'role': 'user', 'content': query})
-        response = openai.ChatCompletion.create(
-            model="gpt-4",  # Use "gpt-4" or whichever model you prefer
-            messages=messages,
-            stream=True  # Enable streaming for incremental responses
-        )
 
+        client = OpenAI()
+        response = client.responses.create(
+            model="gpt-4o",
+            input=messages,
+            stream=True,
+        )
         # Collect the response content
         content = ""
         for chunk in response:
@@ -620,8 +623,7 @@ def llm(query, history=[], user_stop_words=[]):
         return str(e)
 
 # Travily 搜索引擎
-if os.environ.get("TAVILY_API_KEY"):
-    os.environ['TAVILY_API_KEY'] = os.environ.get("TAVILY_API_KEY")
+if os.environ["TAVILY_API_KEY"]:
     tavily = TavilySearchResults(max_results=5)
     tavily.description = '这是一个类似谷歌和百度的搜索引擎，搜索知识、天气、股票、电影、小说、百科等都是支持的哦，如果你不确定就应该搜索一下，谢谢！'
 else:
@@ -782,10 +784,11 @@ def chat(chat_destination, chat_history, chat_departure, chat_days, chat_style, 
     chat_history.append((chat_destination, ''))
 
     # 调用 OpenAI ChatCompletion 接口，流式响应
-    response = openai.ChatCompletion.create(
-        model="gpt-4",  # 或者 "gpt-4.5-turbo" / "gpt-3.5-turbo" 根据你订阅的计划选择
-        messages=messages,
-        stream=True
+    client = OpenAI()
+    response = client.responses.create(
+        model="gpt-4o",  # 或者 "gpt-4.5-turbo" / "gpt-3.5-turbo" 根据你订阅的计划选择
+        input=messages,
+        stream=False
     )
 
     answer = ""
@@ -803,60 +806,54 @@ def chat(chat_destination, chat_history, chat_departure, chat_days, chat_style, 
                 
                 yield '', chat_history
 
-# Gradio接口定义
-with gr.Blocks(css=css) as demo:
-    html_code = """
-     <!DOCTYPE html>
-        <html lang="zh-CN">        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-                body {
-                    font-family: 'Arial', sans-serif;
-                    background-color: #f8f9fa;
-                    margin: 0;
-                    padding: 10px;
-                }
-                .container {
-                    max-width: 1500px;
-                    margin: auto;
-                    background-color: #ffffff;
-                    border-radius: 10px;
-                    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-                    padding: 10px;
-                }
-                .logo img {
-                    display: block;
-                    margin: 0 auto;
-                    border-radius: 7px;
-                }
-                .content h2 {
-                    text-align: center;
-                    color: #999999;
-                    font-size: 24px;
-                    margin-top: 20px;
-                }
-                .content p {
-                    text-align: center;
-                    color: #cccccc;
-                    font-size: 16px;
-                    line-height: 1.5;
-                    margin-top: 30px;
-                }
-            </style>
-        </head>
-    <body>
-            <div class="container">
-                <div class="logo">
-                    <img src="https://img.picui.cn/free/2024/09/25/66f3cdc149a78.png" alt="Logo" width="30%">
-                </div>
-                <div class="content">
-                    <h2>😀 欢迎来到“LvBan恣行”，您的专属旅行伙伴！我们致力于为您提供个性化的旅行规划、陪伴和分享服务，让您的旅程充满乐趣并留下难忘回忆。\n</h2>     
-                </div>
-            </div>
-    </body>
+# 将本地logo图像编码为 base64
+image_path = os.path.join(os.path.dirname(__file__), "smartVoyager.png")
+with open(image_path, "rb") as image_file:
+    encoded = base64.b64encode(image_file.read()).decode("utf-8")
+
+# 构造 HTML 片段，嵌入 base64 图像
+html_code = f"""
+<div class="container">
+    <div class="logo">
+        <img src="data:image/png;base64,{encoded}" alt="Logo" width="30%">
+    </div>
+    <div class="content">
+        <h2>欢迎使用SmartVoyager智行，您的智能旅行管家！<br></h2>     
+    </div>
+</div>
 """
 
+# CSS 样式（你原来的 css 可以继续传入）
+css = """
+    body {
+        font-family: 'Arial', sans-serif;
+        background-color: #f8f9fa;
+        margin: 0;
+        padding: 10px;
+    }
+    .container {
+        max-width: 1500px;
+        margin: auto;
+        background-color: #ffffff;
+        border-radius: 10px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        padding: 10px;
+    }
+    .logo img {
+        display: block;
+        margin: 0 auto;
+        border-radius: 7px;
+    }
+    .content h2 {
+        text-align: center;
+        color: #999999;
+        font-size: 24px;
+        margin-top: 20px;
+    }
+"""
+
+# Gradio 页面构建
+with gr.Blocks(css=css) as demo:
     gr.HTML(html_code)
     with gr.Tab("旅行规划助手"):
         # with gr.Group():
@@ -907,7 +904,7 @@ with gr.Blocks(css=css) as demo:
                     chatbot = gr.Chatbot(label="聊天记录",height=521)
         submit_button.click(respond, [msg, chatbot, whether_rag], [msg, chatbot])
         clear_button.click(clear_chat, chatbot, chatbot)        
-        Weather_APP_KEY = os.environ.get("Weather_APP_KEY")
+        Weather_APP_KEY = os.environ["Weather_APP_KEY"]
         def weather_process(location):
                 api_key = Weather_APP_KEY  # 替换成你的API密钥  
                 location_data = get_location_data(location, api_key)
@@ -1003,8 +1000,6 @@ with gr.Blocks(css=css) as demo:
                 chatbot_audio = gr.Chatbot(label="聊天记录",type="tuples",height= 600)
                 submit_btn_audio.click(process_audio, inputs=[audio_input, chatbot_audio], outputs=[chatbot_audio])
                 clear_btn_audio.click(clear_chat_audio, chatbot_audio, chatbot_audio)
-            
-
             
     with gr.Tab("旅行文案助手"):
         with gr.Row():

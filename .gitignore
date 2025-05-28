@@ -173,6 +173,7 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-
+# smartVoyager
 model
 dataset
+drive_environment.sh
