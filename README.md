@@ -1,6 +1,10 @@
 # 🚀 SmartVoyager
+<div align="center">
+  <img src="./smartVoyager.png" alt="SmartVoyager Logo" width="800px">
+</div>
 
-A smart and scalable AI-driven travel assistant powered by LLMs.
+SmartVoyager is a AI-driven travel assistant powered by LLMs.
+
 
 
 ## 📌 Introduction
