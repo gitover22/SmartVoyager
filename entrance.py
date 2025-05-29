@@ -3,10 +3,7 @@ import gradio as gr
 import requests
 from gradio.components import HTML
 import uuid
-from PIL import Image
-import io
 import base64
-import random
 import openai
 from openai import OpenAI
 from langchain_community.vectorstores import Chroma
@@ -27,6 +24,7 @@ from http import HTTPStatus
 import dashscope
 from pydub import AudioSegment
 from dotenv import load_dotenv
+
 
 # 加载 .env 文件中的 API Key
 load_dotenv()
@@ -724,32 +722,6 @@ def process_network(query):
     success, result, my_history = agent_execute_with_retry(query, chat_history=my_history)
     return result
 
-
-css="""
-#col-left {
-    margin: 0 auto;
-    max-width: 430px;
-}
-#col-mid {
-    margin: 0 auto;
-    max-width: 430px;
-}
-#col-right {
-    margin: 0 auto;
-    max-width: 430px;
-}
-#col-showcase {
-    margin: 0 auto;
-    max-width: 1100px;
-}
-#button {
-    color: blue;
-}
-
-"""
-
-
-
 # 旅行规划师功能
 
 prompt = """你现在是一位专业的旅行规划师，你的责任是根据旅行出发地、目的地、天数、行程风格（紧凑、适中、休闲）、预算、随行人数，帮助我规划旅游行程并生成详细的旅行计划表。请你以表格的方式呈现结果。旅行计划表的表头请包含日期、地点、行程计划、交通方式、餐饮安排、住宿安排、费用估算、备注。所有表头都为必填项，请加深思考过程，严格遵守以下规则：
@@ -794,63 +766,105 @@ def chat(chat_destination, chat_history, chat_departure, chat_days, chat_style, 
 
     yield '', chat_history
 
-# 将本地logo图像编码为 base64
+# =====================  LOGO BASE64  =====================
 image_path = os.path.join(os.path.dirname(__file__), "smartVoyager.png")
 with open(image_path, "rb") as image_file:
     encoded = base64.b64encode(image_file.read()).decode("utf-8")
 
-# 构造 HTML 片段，嵌入 base64 图像
+# =====================  HERO SECTION  =====================
 html_code = f"""
-<div class="container">
-    <div class="logo">
-        <img src="data:image/png;base64,{encoded}" alt="Logo" width="30%">
-    </div>
-    <div class="content">
-        <h2>欢迎使用SmartVoyager智行，您的智能旅行管家！<br></h2>     
-    </div>
-</div>
+<section class="hero">
+    <img src="data:image/png;base64,{encoded}" alt="SmartVoyager Logo" class="hero-logo" />
+    <h1 class="hero-title">SmartVoyager智行<br><span class="subtitle">您的智能旅行管家！</span></h1>
+</section>
 """
 
-# CSS 样式（你原来的 css 可以继续传入）
-css = """
-    body {
-        font-family: 'Arial', sans-serif;
-        background-color: #f8f9fa;
-        margin: 0;
-        padding: 10px;
-    }
-    .container {
-        max-width: 1500px;
-        margin: auto;
-        background-color: #ffffff;
-        border-radius: 10px;
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-        padding: 10px;
-    }
-    .logo img {
-        display: block;
-        margin: 0 auto;
-        border-radius: 7px;
-    }
-    .content h2 {
-        text-align: center;
-        color: #999999;
-        font-size: 24px;
-        margin-top: 20px;
-    }
+# =====================  GLOBAL CSS  =====================
+custom_css = """
+:root{
+    --primary:#4F46E5;          /* indigo-600 */
+    --primary-hover:#6366F1;    /* indigo-500 */
+    --bg:#F9FAFB;
+    --text:#111827;
+}
+body{
+    font-family:'Inter','Noto Sans SC',sans-serif;
+    background:linear-gradient(180deg,var(--bg) 0%,#E0E7FF 100%);
+    margin:0;
+}
+
+/* Core wrapper width */
+.gradio-container{
+    max-width:1280px;
+    margin:0 auto;
+    padding:0 1rem 4rem;
+}
+
+/* ---------------- HERO ---------------- */
+.hero{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:1rem;
+    padding:40px 0 30px;
+    text-align:center;
+}
+@media(min-width:768px){
+    .hero{flex-direction:row;text-align:left;}
+}
+.hero-logo{
+    width:160px;
+    height:auto;
+    border-radius:12px;
+    box-shadow:0 4px 12px rgba(0,0,0,.08);
+}
+.hero-title{
+    font-size:2.25rem;
+    font-weight:700;
+    line-height:1.2;
+    color:var(--primary);
+}
+.subtitle{
+    font-size:1.125rem;
+    font-weight:500;
+    color:var(--text);
+}
+
+/* ---------------- COMMON COMPONENTS ---------------- */
+#button button{
+    background:var(--primary);
+    color:#ffffff;
+    border:none;
+    border-radius:8px;
+    font-weight:600;
+    padding:.55rem 1.3rem;
+}
+#button button:hover{background:var(--primary-hover);}
+
+#chat-box{
+    border:1px solid #E5E7EB;
+    border-radius:12px;
+}
+
+.gr-accordion,.gr-accordion-open{
+    border:1px solid #E5E7EB;
+    border-radius:12px;
+}
 """
 
-# Gradio 页面构建
-with gr.Blocks(css=css) as demo:
+# =====================  BUILD GRADIO APP  =====================
+with gr.Blocks(css=custom_css) as demo:
+    # ---- Hero banner ----
     gr.HTML(html_code)
+
+    # =================  旅行规划助手  =================
     with gr.Tab("旅行规划助手"):
-        # with gr.Group():
         with gr.Row():
             chat_departure = gr.Textbox(label="输入旅游出发地", placeholder="请你输入出发地")
             gr.Examples(["合肥", "郑州", "西安", "北京", "广州", "大连","厦门","南京", "大理", "上海","成都","黄山"], chat_departure, label='出发地示例',examples_per_page= 12)
             chat_destination = gr.Textbox(label="输入旅游目的地", placeholder="请你输入想去的地方")
             gr.Examples(["合肥", "郑州", "西安", "北京", "广州", "大连","厦门","南京", "大理", "上海","成都","黄山"], chat_destination, label='目的地示例',examples_per_page= 12)
-        
+
         with gr.Accordion("个性化选择（天数，行程风格，预算，随行人数）", open=False):
             with gr.Group():
                 with gr.Row():
@@ -860,14 +874,18 @@ with gr.Blocks(css=css) as demo:
                 with gr.Row():   
                     chat_people = gr.Textbox(label="输入随行人数", placeholder="请你输入随行人数")
                     chat_other = gr.Textbox(label="特殊偏好、要求(可写无)", placeholder="请你特殊偏好、要求")
-                # 聊天对话框
+
         llm_submit_tab = gr.Button("发送", visible=True,elem_id="button")
         chatbot = gr.Chatbot([], elem_id="chat-box", label="聊天窗口", height=600)
         llm_submit_tab.click(fn=chat, inputs=[chat_destination, chatbot, chat_departure, chat_days, chat_style, chat_budget, chat_people, chat_other], outputs=[ chat_destination,chatbot])
+
+    # ===============  旅游问答助手  ===============
     def respond(message, chat_history, use_kb):
-            return process_question(chat_history, use_kb, message)
+        return process_question(chat_history, use_kb, message)
+
     def clear_chat(chat_history):
         return clear_history(chat_history)    
+
     with gr.Tab("旅游问答助手"):
         with gr.Tab("知识库问答"):
             with gr.Row():
@@ -878,66 +896,31 @@ with gr.Blocks(css=css) as demo:
                     with gr.Row():
                         submit_button = gr.Button("发送", elem_id="button")
                         clear_button = gr.Button("清除对话", elem_id="button")
-            
-                    # 问题样例
-                    gr.Examples(["我想去香港玩，你有什么推荐的吗？","在杭州，哪些家餐馆可以推荐去的？","我计划暑假带家人去云南旅游，请问有哪些必游的自然风光和民族文化景点？","下个月我将在西安，想了解秦始皇兵马俑开通时间以及交通信息","第一次去西藏旅游，需要注意哪些高原反应的预防措施？","去三亚度假，想要住海景酒店，性价比高的选择有哪些？","去澳门旅游的最佳时间是什么时候？","计划一次五天四夜的西安深度游，怎样安排行程比较合理，能覆盖主要景点？"], msg)
-            
                 with gr.Column():
-                    chatbot = gr.Chatbot(label="聊天记录",height=521)
-        submit_button.click(respond, [msg, chatbot, whether_rag], [msg, chatbot])
-        clear_button.click(clear_chat, chatbot, chatbot)        
+                    chatbot_qna = gr.Chatbot(label="聊天记录",height=521)
+            submit_button.click(respond, [msg, chatbot_qna, whether_rag], [msg, chatbot_qna])
+            clear_button.click(clear_chat, chatbot_qna, chatbot_qna)        
+
+        # ===============  附近查询&联网搜索&天气查询  ===============
         Weather_APP_KEY = os.environ["Weather_APP_KEY"]
         def weather_process(location):
                 api_key = Weather_APP_KEY  # 替换成你的API密钥  
                 location_data = get_location_data(location, api_key)
-                # print(location_data)
                 if not location_data:
                     return "无法获取城市信息，请检查您的输入。"
                 location_id = location_data.get('location', [{}])[0].get('id')
-                # print(location_id)
                 if not location_id:
                     return "无法从城市信息中获取ID。"
                 weather_data = get_weather_forecast(location_id, api_key)
                 if not weather_data or weather_data.get('code') != '200':
                     return "无法获取天气预报，请检查您的输入和API密钥。"
-                # 构建HTML表格来展示天气数据
                 html_content = "<table>"
                 html_content += "<tr>"
-                html_content += "<th>预报日期</th>"
-                html_content += "<th>白天天气</th>"
-                html_content += "<th>夜间天气</th>"
-                html_content += "<th>最高温度</th>"
-                html_content += "<th>最低温度</th>"
-                html_content += "<th>白天风向</th>"
-                html_content += "<th>白天风力等级</th>"
-                html_content += "<th>白天风速</th>"
-                html_content += "<th>夜间风向</th>"
-                html_content += "<th>夜间风力等级</th>"
-                html_content += "<th>夜间风速</th>"
-                html_content += "<th>总降水量</th>"
-                html_content += "<th>紫外线强度</th>"
-                html_content += "<th>相对湿度</th>"
+                html_content += "<th>预报日期</th><th>白天天气</th><th>夜间天气</th><th>最高温度</th><th>最低温度</th><th>白天风向</th><th>白天风力等级</th><th>白天风速</th><th>夜间风向</th><th>夜间风力等级</th><th>夜间风速</th><th>总降水量</th><th>紫外线强度</th><th>相对湿度</th>"
                 html_content += "</tr>"
-
                 for day in weather_data.get('daily', []):
-                    html_content += f"<tr>"
-                    html_content += f"<td>{day['fxDate']}</td>"
-                    html_content += f"<td>{day['textDay']} ({day['iconDay']})</td>"
-                    html_content += f"<td>{day['textNight']} ({day['iconNight']})</td>"
-                    html_content += f"<td>{day['tempMax']}°C</td>"
-                    html_content += f"<td>{day['tempMin']}°C</td>"
-                    html_content += f"<td>{day.get('windDirDay', '未知')}</td>"
-                    html_content += f"<td>{day.get('windScaleDay', '未知')}</td>"
-                    html_content += f"<td>{day.get('windSpeedDay', '未知')} km/h</td>"
-                    html_content += f"<td>{day.get('windDirNight', '未知')}</td>"
-                    html_content += f"<td>{day.get('windScaleNight', '未知')}</td>"
-                    html_content += f"<td>{day.get('windSpeedNight', '未知')} km/h</td>"
-                    html_content += f"<td>{day.get('precip', '未知')} mm</td>"
-                    html_content += f"<td>{day.get('uvIndex', '未知')}</td>"
-                    html_content += f"<td>{day.get('humidity', '未知')}%</td>"
-                    html_content += "</tr>"
+                    html_content += f"<tr><td>{day['fxDate']}</td><td>{day['textDay']} ({day['iconDay']})</td><td>{day['textNight']} ({day['iconNight']})</td><td>{day['tempMax']}°C</td><td>{day['tempMin']}°C</td><td>{day.get('windDirDay', '未知')}</td><td>{day.get('windScaleDay', '未知')}</td><td>{day.get('windSpeedDay', '未知')} km/h</td><td>{day.get('windDirNight', '未知')}</td><td>{day.get('windScaleNight', '未知')}</td><td>{day.get('windSpeedNight', '未知')} km/h</td><td>{day.get('precip', '未知')} mm</td><td>{day.get('uvIndex', '未知')}</td><td>{day.get('humidity', '未知')}%</td></tr>"
                 html_content += "</table>"  
-  
                 return HTML(html_content)  
 
         def clear_history_audio(history):
@@ -948,20 +931,16 @@ with gr.Blocks(css=css) as demo:
             return clear_history_audio(chat_history)
 
         with gr.Tab("附近查询&联网搜索&天气查询"):
-            
             with gr.Row():
                 with gr.Column():
                     query_near = gr.Textbox(label="查询附近的餐饮、酒店等", placeholder="例如：合肥市高新区中国声谷产业园附近的美食")
                     result = gr.Textbox(label="查询结果", lines=2)
                     submit_btn = gr.Button("查询附近的餐饮、酒店等",elem_id="button")
                     gr.Examples(["合肥市高新区中国声谷产业园附近的美食", "北京三里屯附近的咖啡", "南京市玄武区新街口附近的甜品店", "上海浦东新区陆家嘴附近的热门餐厅", "武汉市光谷步行街附近的火锅店", "广州市天河区珠江新城附近的酒店"], query_near)
-                
                     submit_btn.click(process_request, inputs=[query_near], outputs=[result])
                 with gr.Column():
                     query_network = gr.Textbox(label="联网搜索问题", placeholder="例如：秦始皇兵马俑开放时间")
                     result_network = gr.Textbox(label="搜索结果", lines=2)
-
-
                     submit_btn_network = gr.Button("联网搜索",elem_id="button")
                     gr.Examples(["秦始皇兵马俑开放时间", "合肥有哪些美食", "北京故宫开放时间", "黄山景点介绍", "上海迪士尼门票需要多少钱"], query_network)
                     submit_btn_network.click(process_network, inputs=[query_network], outputs=[result_network])
@@ -970,8 +949,8 @@ with gr.Blocks(css=css) as demo:
             weather_output = gr.HTML(value="", label="天气查询结果")
             query_button = gr.Button("查询天气",elem_id="button")
             query_button.click(weather_process, [weather_input], [weather_output])
-        
-        # gr.Markdown("<h1 style='text-align: center;'>由于gr.Audio(type=\"filepath\")函数输出音频临时路径，没法指定路径，导致创空间没法保存。若想体验语音识别对话，请您本地部署或服务器部署</h1>")
+
+        # =================  语音对话  =================
         with gr.Tab("语音对话"):
             with gr.Row():
                 with gr.Column():
@@ -982,7 +961,8 @@ with gr.Blocks(css=css) as demo:
                 chatbot_audio = gr.Chatbot(label="聊天记录",type="tuples",height= 600)
                 submit_btn_audio.click(process_audio, inputs=[audio_input, chatbot_audio], outputs=[chatbot_audio])
                 clear_btn_audio.click(clear_chat_audio, chatbot_audio, chatbot_audio)
-            
+
+    # ===============  旅行文案助手  ===============
     with gr.Tab("旅行文案助手"):
         with gr.Row():
             with gr.Column():
@@ -990,7 +970,7 @@ with gr.Blocks(css=css) as demo:
                 
             with gr.Column():    
                 style_dropdown = gr.Dropdown(choices=style_options, label="选择风格模式", value="朋友圈")
-            # with gr.Column():
+            with gr.Column():
                 audio_output = gr.Audio(label="音频播放", interactive=False, visible=True)
 
             with gr.Column():
@@ -999,7 +979,7 @@ with gr.Blocks(css=css) as demo:
         with gr.Row():
             generate_button = gr.Button("第一步：生成文案", visible=True,elem_id="button")
             convert_button1 = gr.Button("第二步：文案转语音", visible=True,elem_id="button")
-            convert_button2 = gr.Button("第三步：文案转视频(请耐心等待)", visible=True,elem_id="button")
+            convert_button2 = gr.Button("第三步：文案转视频", visible=True,elem_id="button")
         with gr.Row():
             with gr.Column():
                 

@@ -69,9 +69,9 @@ python entrance.py
 
 ## ✅ Todo List
 
-* [ ] 添加 map API 支持
+* [ √ ] 添加 map API 支持
+* [ √ ] 重构 Web 前端界面
 * [ ] 增加MCP协议，A2A协议，重构RAG
-* [ ] 重构 Web 前端界面
 
 ---
 
