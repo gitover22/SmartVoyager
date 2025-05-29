@@ -49,17 +49,14 @@ def chat_with_openai(prompt, history=[]):
     messages.append({"role": "user", "content": prompt})
 
     client = OpenAI()
-    response = client.responses.create(
+    response = client.chat.completions.create(
         model="gpt-4o",
-        input=messages,
+        messages=messages,
+        max_tokens=200,
         stream=False,
     )
-    response = client.responses.create(
-    model="gpt-4o",
-    input=messages,
-    stream=True,
-)
-    return response["choices"][0]["message"]["content"]
+    
+    return response.choices[0].message.content
 
 # 图像理解（使用 GPT-4 Vision 或 OpenAI 的未来图像分析接口，暂简化为占位）  ==== iu
 def image_understanding(prompt: str, temp_image_path: str) -> str:
@@ -70,16 +67,16 @@ def image_understanding(prompt: str, temp_image_path: str) -> str:
 
     # 调用 OpenAI GPT-4 Vision 接口分析图像
     client = OpenAI()
-    response = client.responses.create(
+    response = client.chat.completions.create(
         model="gpt-4-vision-preview",
-        input=[
+        messages=[
             {"role": "user", "content": [
                 {"type": "text", "text": prompt},
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_img}"}}
             ]}
         ]
     )
-    return response['choices'][0]['message']['content']
+    return response.choices[0].message.content
 
 # 文本转语音（TTS）   === t2a
 def text_to_speech(text, filename="output.mp3"):
@@ -125,11 +122,11 @@ def generate_text_from_image(image, style):
     question = f"根据图片描述：{image_description}, 用{style}风格生成一段文字。"
     
     client = OpenAI()
-    response = client.responses.create(
+    response = client.chat.completions.create(
         model="gpt-4o",
         input=[{"role": "user", "content": question}],
     )
-    return response["choices"][0]["message"]["content"]
+    return response.choices[0].message.content
 
 # 文案到语音
 def text_to_audio(text_input):
@@ -188,7 +185,7 @@ def process_audio(audio, history):
                 return "未识别到语音，请重试。", history
 
             client = OpenAI()
-            response = client.responses.create(
+            response = client.chat.completions.create(
                 model="gpt-4o",
                 input=[{"role": "user", "content": audio_text}],
                 stream=True,
@@ -206,13 +203,13 @@ def process_audio(audio, history):
 
 rerank_path = './model/rerank_model'
 rerank_model_name = 'BAAI/bge-reranker-large'
+# 从文本中提取城市名称，假设使用jieba进行分词和提取地名
 def extract_cities_from_text(text):
-    # 从文本中提取城市名称，假设使用jieba进行分词和提取地名
     import jieba.posseg as pseg
     words = pseg.cut(text)
     cities = [word for word, flag in words if flag == "ns"]
     return cities
-
+# 使用citys城市名索引相关的pdf文件
 def find_pdfs_with_city(cities, pdf_directory):
     matched_pdfs = {}
     for city in cities:
@@ -311,7 +308,7 @@ def embedding_make(text_input, pdf_directory):
     city_to_pdfs = get_embedding_pdf(text_input, pdf_directory)
     city_list = []
     for city, pdfs in city_to_pdfs.items():
-        print(f"City: {city}")
+        # print(f"City: {city}")
         for pdf in pdfs:
             city_list.append(pdf)
     
@@ -377,14 +374,11 @@ def embedding_make(text_input, pdf_directory):
         model_input = f'你是一个旅游攻略小助手，你的任务是，根据收集到的信息：\n{reranked}.\n来精准回答用户所提出的问题：{question}。'
 
         client = OpenAI()
-        response = client.responses.create(
+        response = client.chat.completions.create(
             model="gpt-4o",
-            input=[{"role": "user", "content": model_input}],
-            temperature=0.7
+            messages=[{"role": "user", "content": model_input}],
         )
-        output = response["choices"][0]["message"]["content"]
-        return output
-
+        return response.choices[0].message.content
     else:
         return "请在输入中提及想要咨询的城市！"
 
@@ -394,12 +388,11 @@ def process_question(history, use_knowledge_base, question, pdf_directory='./dat
     else:
         client = OpenAI()
 
-        out = client.responses.create(
+        out = client.chat.completions.create(
             model="gpt-4o",
-            input=[{"role": "user", "content": question}],
-            temperature=0.7
+            messages=[{"role": "user", "content": question}]
         )
-        response = out["choices"][0]["message"]["content"]
+        response = out.choices[0].message.content
     
     history.append((question, response))
     return "", history
@@ -606,7 +599,7 @@ def llm(query, history=[], user_stop_words=[]):
         messages.append({'role': 'user', 'content': query})
 
         client = OpenAI()
-        response = client.responses.create(
+        response = client.chat.completions.create(
             model="gpt-4o",
             input=messages,
             stream=True,
@@ -785,26 +778,21 @@ def chat(chat_destination, chat_history, chat_departure, chat_days, chat_style, 
 
     # 调用 OpenAI ChatCompletion 接口，流式响应
     client = OpenAI()
-    response = client.responses.create(
-        model="gpt-4o",  # 或者 "gpt-4.5-turbo" / "gpt-3.5-turbo" 根据你订阅的计划选择
-        input=messages,
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=messages,
+        max_tokens= 200,
         stream=False
     )
 
-    answer = ""
-    for chunk in response:
-        if "choices" in chunk and len(chunk["choices"]) > 0:
-            delta = chunk["choices"][0]["delta"]
-            if "content" in delta:
-                chunk_text = delta["content"]
-                answer += chunk_text
+    answer = response.choices[0].message.content
 
-                information = '旅游出发地：{}，旅游目的地：{} ，天数：{} ，行程风格：{} ，预算：{}，随行人数：{}'.format(
-                    chat_departure, chat_destination, chat_days, chat_style, chat_budget, chat_people
-                )
-                chat_history[-1] = (information, answer)
-                
-                yield '', chat_history
+    information = '旅游出发地：{}，旅游目的地：{} ，天数：{} ，行程风格：{} ，预算：{}，随行人数：{}'.format(
+        chat_departure, chat_destination, chat_days, chat_style, chat_budget, chat_people
+    )
+    chat_history[-1] = (information, answer)
+
+    yield '', chat_history
 
 # 将本地logo图像编码为 base64
 image_path = os.path.join(os.path.dirname(__file__), "smartVoyager.png")
@@ -875,12 +863,6 @@ with gr.Blocks(css=css) as demo:
                 # 聊天对话框
         llm_submit_tab = gr.Button("发送", visible=True,elem_id="button")
         chatbot = gr.Chatbot([], elem_id="chat-box", label="聊天窗口", height=600)
-        # 按钮
-        # llm_submit_tab = gr.Button("发送", visible=True,variant="primary")
-        # # 问题样例
-        # gr.Examples(["合肥", "郑州", "西安", "北京", "广州", "大连"], chat_departure)
-        # gr.Examples(["北京", "南京", "大理", "上海", "东京", "巴黎"], chat_destination)
-        # 按钮出发逻辑
         llm_submit_tab.click(fn=chat, inputs=[chat_destination, chatbot, chat_departure, chat_days, chat_style, chat_budget, chat_people, chat_other], outputs=[ chat_destination,chatbot])
     def respond(message, chat_history, use_kb):
             return process_question(chat_history, use_kb, message)
