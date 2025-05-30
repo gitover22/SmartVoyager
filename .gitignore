@@ -177,3 +177,5 @@ cython_debug/
 model
 dataset
 drive_environment.sh
+audios
+images/

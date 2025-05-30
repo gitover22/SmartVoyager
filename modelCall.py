@@ -2,7 +2,6 @@ import base64
 import hashlib
 from loguru import logger
 from openai import OpenAI
-import openai
 import os
 import requests
 
