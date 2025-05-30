@@ -68,13 +68,14 @@ python entrance.py
 
 ## 📰 News
 
-* 5/28 星火开发套件，接口转化为openai套件.
+* 5/28 大模型接口统一使用openai套件.
 
 
 ## ✅ Todo List
 
 * [ √ ] 添加 map API 支持
 * [ √ ] 重构 Web 前端界面
+* [ ] 重构代码
 * [ ] 增加MCP协议，A2A协议，重构RAG
 
 ---

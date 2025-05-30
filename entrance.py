@@ -4,8 +4,6 @@ import requests
 from gradio.components import HTML
 import uuid
 import base64
-import openai
-from openai import OpenAI
 from langchain_community.vectorstores import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyMuPDFLoader
@@ -16,126 +14,32 @@ import re
 import time
 import json
 import numpy as np
-from text2audio.infer import audio2lip
 from loguru import logger
 from langchain_community.tools.tavily_search import TavilySearchResults
 import datetime
-from http import HTTPStatus
-import dashscope
 from pydub import AudioSegment
-from dotenv import load_dotenv
+from modelCall import OpenaiModelsCall
 
-
-# 加载 .env 文件中的 API Key
-load_dotenv()
-
-openai.api_key = os.environ["OPENAI_API_KEY"]
-
-# 临时目录设置
-TEMP_IMAGE_DIR = "/tmp/sparkai_images/"
-TEMP_AUDIO_DIR = "./static"
-
-# 风格选项
 style_options = ["朋友圈", "小红书", "微博", "抖音"]
-
-# Chat 用例函数
-def chat_with_openai(prompt, history=[]):
-    messages = [{"role": "system", "content": "你是一个聪明的助手"}]
-    for h in history:
-        messages.append({"role": "user", "content": h["user"]})
-        messages.append({"role": "assistant", "content": h["assistant"]})
-    messages.append({"role": "user", "content": prompt})
-
-    client = OpenAI()
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=messages,
-        max_tokens=200,
-        stream=False,
-    )
-    
-    return response.choices[0].message.content
-
-# 图像理解（使用 GPT-4 Vision 或 OpenAI 的未来图像分析接口，暂简化为占位）  ==== iu
-def image_understanding(prompt: str, temp_image_path: str) -> str:
-    # 读取图像文件并转为 base64
-    with open(temp_image_path, "rb") as image_file:
-        image_bytes = image_file.read()
-    base64_img = base64.b64encode(image_bytes).decode("utf-8")
-
-    # 调用 OpenAI GPT-4 Vision 接口分析图像
-    client = OpenAI()
-    response = client.chat.completions.create(
-        model="gpt-4-vision-preview",
-        messages=[
-            {"role": "user", "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_img}"}}
-            ]}
-        ]
-    )
-    return response.choices[0].message.content
-
-# 文本转语音（TTS）   === t2a
-def text_to_speech(text, filename="output.mp3"):
-    response = openai.audio.speech.create(
-        model="tts-1",
-        voice="alloy",
-        input=text
-    )
-    filepath = os.path.join(TEMP_AUDIO_DIR, filename)
-    with open(filepath, "wb") as f:
-        f.write(response.content)
-    return filepath
-
-# 语音转文字（Whisper）   ==== a2t
-def speech_to_text(audio_path):
-    with open(audio_path, "rb") as audio_file:
-        transcript = openai.Audio.transcribe("whisper-1", audio_file)
-    return transcript["text"]
-
-# 文本生成图像（使用 OpenAI DALL·E）    ==== t2i
-def text_to_image(prompt):
-    response = openai.Image.create(
-        prompt=prompt,
-        n=1,
-        size="1024x1024"
-    )
-    return response['data'][0]['url']
+openai_client = OpenaiModelsCall()
 
 # 保存图片并获取临时路径
 def save_and_get_temp_url(image):
-    if not os.path.exists(TEMP_IMAGE_DIR):
-        os.makedirs(TEMP_IMAGE_DIR)
+    if not os.path.exists(OpenaiModelsCall.temp_image_dir):
+        os.makedirs(OpenaiModelsCall.temp_image_dir)
     unique_filename = str(uuid.uuid4()) + ".png"
-    temp_filepath = os.path.join(TEMP_IMAGE_DIR, unique_filename)
+    temp_filepath = os.path.join(OpenaiModelsCall.temp_image_dir, unique_filename)
     image.save(temp_filepath)
     return temp_filepath
 
-# 生成文本
+# 根据图像生成文本
 def generate_text_from_image(image, style):
     temp_image_path = save_and_get_temp_url(image)
     prompt = "请理解这张图片"
-    image_description = image_understanding(prompt, temp_image_path)
+    image_description = openai_client.image_understanding(prompt=prompt, img_path=temp_image_path)
     question = f"根据图片描述：{image_description}, 用{style}风格生成一段文字。"
-    
-    client = OpenAI()
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        input=[{"role": "user", "content": question}],
-    )
-    return response.choices[0].message.content
-
-# 文案到语音
-def text_to_audio(text_input):
-    try:
-        audio_path = "./demo.mp3"
-        # 使用 OpenAI 的文本转语音 API
-        text_to_speech(text_input, filename=os.path.basename(audio_path))
-        return audio_path
-    except Exception as e:
-        print(f"Error generating audio: {e}")
-        return None
+    response = openai_client.chat_with_openai(question)
+    return response
 
 # 第一阶段：用户上传图片并选择风格后，点击生成文案
 def on_generate_click(image, style):
@@ -144,12 +48,7 @@ def on_generate_click(image, style):
 
 # 第二阶段：点击“将文案转为语音”按钮，生成并播放语音
 def on_convert_click(text_output):
-    return text_to_audio(text_output)
-
-# 第三阶段：点击“将文案转为数字人视频”按钮，生成并播放语音
-def on_lip_click(text_output,video_path='./shuziren.mp4'):
-    video_output = audio2lip(text_output,video_path)
-    return video_output
+    return openai_client.text_to_audio(text_output)
 
 #音频处理函数
 def process_audio_file(audio_path):
@@ -157,7 +56,7 @@ def process_audio_file(audio_path):
     audio_segment = audio_segment.set_frame_rate(16000).set_sample_width(2).set_channels(1)
 
     unique_filename = 'audio' + ".mp3"
-    temp_filepath = os.path.join(TEMP_AUDIO_DIR, unique_filename)
+    temp_filepath = os.path.join(OpenaiModelsCall.temp_audio_dir, unique_filename)
     audio_segment.export(temp_filepath, format="mp3")
     return temp_filepath
 
@@ -174,20 +73,14 @@ def process_audio(audio, history):
         try:
             # 使用 OpenAI Whisper 模型转文本
             with open(audio_path, "rb") as audio_file:
-                transcript = openai.Audio.transcribe("whisper-1", audio_file)
-                audio_text = transcript.get("text", "")
+                audio_text = openai_client.speech_to_text(audio_path=audio_file)
 
             print(f"语音识别结果：{audio_text}")
 
             if not audio_text.strip():
                 return "未识别到语音，请重试。", history
 
-            client = OpenAI()
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                input=[{"role": "user", "content": audio_text}],
-                stream=True,
-            )["choices"][0]["message"]["content"]
+            response = openai_client.chat_with_openai(audio_text)
             print(f"生成的响应: {response}")
 
             # 更新对话历史
@@ -225,33 +118,6 @@ def get_embedding_pdf(text, pdf_directory):
     city_to_pdfs = find_pdfs_with_city(cities, pdf_directory)
     return city_to_pdfs
     
-def generate_image(prompt):
-    logger.info(f'生成图片: {prompt}')
-    import uuid
-    output_path = f"./images/{uuid.uuid4().hex}.jpg"
-    
-    try:
-        # 调用 OpenAI DALL·E 接口
-        response = openai.Image.create(
-            prompt=prompt,
-            n=1,
-            size="1024x1024"
-        )
-        image_url = response['data'][0]['url']
-        
-        # 下载图片保存到本地
-        img_data = requests.get(image_url).content
-        with open(output_path, 'wb') as handler:
-            handler.write(img_data)
-
-        return output_path
-
-    except Exception as e:
-        logger.error(f"生成图片出错: {e}")
-        return None
-
-
-
 def load_rerank_model(model_name=rerank_model_name):
     """
     加载重排名模型。
@@ -334,21 +200,13 @@ def embedding_make(text_input, pdf_directory):
         retriever.k = 20
         bm25_result = retriever.invoke(question)
 
-         # === 替换为 OpenAI 嵌入 ===
-        def get_openai_embedding(text):
-            result = openai.Embedding.create(
-                model="text-embedding-3-small",  # 或 text-embedding-3-large
-                input=text
-            )
-            return result["data"][0]["embedding"]
-
-        question_vector = get_openai_embedding(question)
+        question_vector = openai_client.get_openai_embedding(question)
         pdf_vector_list = []
         
         start_time = time.perf_counter()
 
         for i in range(len(bm25_result)):
-            x = get_openai_embedding(bm25_result[i].page_content)
+            x = openai_client.get_openai_embedding(bm25_result[i].page_content)
             pdf_vector_list.append(x)
             time.sleep(0.65)
 
@@ -371,12 +229,8 @@ def embedding_make(text_input, pdf_directory):
 
         model_input = f'你是一个旅游攻略小助手，你的任务是，根据收集到的信息：\n{reranked}.\n来精准回答用户所提出的问题：{question}。'
 
-        client = OpenAI()
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": model_input}],
-        )
-        return response.choices[0].message.content
+        response = openai_client.chat_with_openai(model_input)
+        return response
     else:
         return "请在输入中提及想要咨询的城市！"
 
@@ -384,14 +238,7 @@ def process_question(history, use_knowledge_base, question, pdf_directory='./dat
     if use_knowledge_base=='是':
         response = embedding_make(question, pdf_directory)
     else:
-        client = OpenAI()
-
-        out = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": question}]
-        )
-        response = out.choices[0].message.content
-    
+        response = openai_client.chat_with_openai(question)
     history.append((question, response))
     return "", history
 
@@ -453,16 +300,11 @@ def get_weather_forecast(location_id,api_key):
         print(f"请求失败，状态码：{response.status_code}，错误信息：{response.text}")  
         return None  
 
-
-from openai import OpenAI
-client = OpenAI(
-        api_key=os.environ["OPENAI_API_KEY"],
-        base_url=os.environ["OPENAI_BASE_URL"]
-)
-
 amap_key = os.environ["amap_key"]
 
-def get_completion(messages, model="deepseek-chat"):
+def get_completion(messages, model="gpt-4o"):
+    from openai import OpenAI
+    client = OpenAI()
     response = client.chat.completions.create(
         model=model,
         messages=messages,
@@ -541,7 +383,6 @@ def search_nearby_pois(longitude, latitude, keyword):
             distance = result["pois"][i]["distance"]
             ans += f"{name}\n{address}\n距离：{distance}米\n\n"
     return ans
-    
 
 def process_request(prompt):
     messages = [
@@ -590,25 +431,8 @@ def process_request(prompt):
 
 def llm(query, history=[], user_stop_words=[]):
     try:
-        messages = [{'role': 'system', 'content': 'You are a helpful assistant.'}]
-        for hist in history:
-            messages.append({'role': 'user', 'content': hist[0]})
-            messages.append({'role': 'assistant', 'content': hist[1]})
-        messages.append({'role': 'user', 'content': query})
-
-        client = OpenAI()
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            input=messages,
-            stream=True,
-        )
-        # Collect the response content
-        content = ""
-        for chunk in response:
-            if 'choices' in chunk:
-                content += chunk['choices'][0].get('message', {}).get('content', '')
-
-        return content
+        response = openai_client.chat_with_openai(prompt=query,history=history)
+        return response
 
     except Exception as e:
         return str(e)
@@ -743,26 +567,15 @@ prompt = """你现在是一位专业的旅行规划师，你的责任是根据�
 """
 def chat(chat_destination, chat_history, chat_departure, chat_days, chat_style, chat_budget, chat_people, chat_other):
     final_query = prompt.format(chat_departure, chat_destination, chat_days, chat_style, chat_budget, chat_people, chat_other)
-    messages = [{"role": "user", "content": final_query}]
     
-    # 将问题设为历史对话
     chat_history.append((chat_destination, ''))
 
-    # 调用 OpenAI ChatCompletion 接口，流式响应
-    client = OpenAI()
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=messages,
-        max_tokens= 200,
-        stream=False
-    )
-
-    answer = response.choices[0].message.content
+    response = openai_client.chat_with_openai(final_query)
 
     information = '旅游出发地：{}，旅游目的地：{} ，天数：{} ，行程风格：{} ，预算：{}，随行人数：{}'.format(
         chat_departure, chat_destination, chat_days, chat_style, chat_budget, chat_people
     )
-    chat_history[-1] = (information, answer)
+    chat_history[-1] = (information, response)
 
     yield '', chat_history
 
@@ -930,7 +743,7 @@ with gr.Blocks(css=custom_css) as demo:
         def clear_chat_audio(chat_history):
             return clear_history_audio(chat_history)
 
-        with gr.Tab("附近查询&联网搜索&天气查询"):
+        with gr.Tab("附近查询&搜索&天气"):
             with gr.Row():
                 with gr.Column():
                     query_near = gr.Textbox(label="查询附近的餐饮、酒店等", placeholder="例如：合肥市高新区中国声谷产业园附近的美食")
@@ -950,18 +763,6 @@ with gr.Blocks(css=custom_css) as demo:
             query_button = gr.Button("查询天气",elem_id="button")
             query_button.click(weather_process, [weather_input], [weather_output])
 
-        # =================  语音对话  =================
-        with gr.Tab("语音对话"):
-            with gr.Row():
-                with gr.Column():
-                    audio_input = gr.Audio(type="filepath")
-                    with gr.Row():
-                        submit_btn_audio = gr.Button("语音识别对话",elem_id="button")
-                        clear_btn_audio = gr.Button("清空历史",elem_id="button")
-                chatbot_audio = gr.Chatbot(label="聊天记录",type="tuples",height= 600)
-                submit_btn_audio.click(process_audio, inputs=[audio_input, chatbot_audio], outputs=[chatbot_audio])
-                clear_btn_audio.click(clear_chat_audio, chatbot_audio, chatbot_audio)
-
     # ===============  旅行文案助手  ===============
     with gr.Tab("旅行文案助手"):
         with gr.Row():
@@ -972,14 +773,10 @@ with gr.Blocks(css=custom_css) as demo:
                 style_dropdown = gr.Dropdown(choices=style_options, label="选择风格模式", value="朋友圈")
             with gr.Column():
                 audio_output = gr.Audio(label="音频播放", interactive=False, visible=True)
-
-            with gr.Column():
-                video_output = gr.Video(label="数字人",visible=True)
                 
         with gr.Row():
-            generate_button = gr.Button("第一步：生成文案", visible=True,elem_id="button")
-            convert_button1 = gr.Button("第二步：文案转语音", visible=True,elem_id="button")
-            convert_button2 = gr.Button("第三步：文案转视频", visible=True,elem_id="button")
+            generate_button = gr.Button("生成文案", visible=True,elem_id="button")
+            convert_button1 = gr.Button("文案转语音", visible=True,elem_id="button")
         with gr.Row():
             with gr.Column():
                 
@@ -991,10 +788,8 @@ with gr.Blocks(css=custom_css) as demo:
         generate_button.click(on_generate_click, inputs=[image_input, style_dropdown], outputs=[generated_text])
        
         convert_button1.click(on_convert_click, inputs=[generated_text], outputs=[audio_output])
-        
-        convert_button2.click(on_lip_click, inputs=[generated_text],outputs=[video_output])
 
-        generate_btn.click(generate_image, inputs=prompt_input, outputs=output_image)
+        generate_btn.click(openai_client.generate_image, inputs=prompt_input, outputs=output_image)
 
 if __name__ == "__main__":
     demo.queue().launch(share=True)
