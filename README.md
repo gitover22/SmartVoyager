@@ -75,6 +75,7 @@ python entrance.py
 
 * [ √ ] 添加 map API 支持
 * [ √ ] 重构 Web 前端界面
+* [ √ ] 调整了重排模型模块
 * [ ] 重构代码
 * [ ] 增加MCP协议，A2A协议，重构RAG
 

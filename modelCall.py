@@ -11,6 +11,7 @@ class OpenaiModelsCall:
     def __init__(self):
         self.client = OpenAI()
         self.max_token = 200
+
     # openai chat接口
     def chat_with_openai(self, prompt, history=[]):
         messages = [{"role": "system", "content": "你是一个聪明的助手"}]
@@ -31,11 +32,9 @@ class OpenaiModelsCall:
     # 图像理解 
     def image_understanding(self, prompt: str, img_path: str) -> str | None:
         """
-        调用 GPT-4o 视觉能力解析图片。
-        - 小图（< 2 MB）可直接 base64；
-        - 大图则自动上传到临时图床（此处用自建 upload_image() 占位）。
+        调用 GPT-4o 视觉能力解析图片
         """
-        import uuid, requests, mimetypes
+        import mimetypes
         from openai import BadRequestError, OpenAIError
 
         # 1) 读取文件
@@ -48,9 +47,9 @@ class OpenaiModelsCall:
 
         try:
             resp = self.client.chat.completions.create(
-                model="gpt-4o",               # ← 新模型
+                model="gpt-4o",               
                 max_tokens=300,
-                timeout=45,                   # openai-python ≥1.3 支持
+                timeout=45,                   
                 messages=[
                     {
                         "role": "user",
@@ -60,7 +59,7 @@ class OpenaiModelsCall:
                                 "type": "image_url",
                                 "image_url": {
                                     "url": img_source,
-                                    "detail": "auto"     # low / high / auto
+                                    "detail": "auto"   
                                 },
                             },
                         ],
@@ -114,7 +113,6 @@ class OpenaiModelsCall:
         logger.info(f"生成图片: {prompt}")
 
         try:
-            # client.images.generate
             response = self.client.images.generate(
                 prompt=prompt,
                 n=1,
@@ -164,7 +162,7 @@ class OpenaiModelsCall:
             print(f"Error generating audio: {e}")
             return None
     
-    # === OpenAI Embedding ===  todo：功能测试
+    # === OpenAI Embedding
     def get_openai_embedding(self,
                              text: str,
                              model: str = "text-embedding-3-small") -> list[float]:
@@ -177,7 +175,6 @@ class OpenaiModelsCall:
         """
         response = self.client.embeddings.create(
             model=model,
-            input=text              # 1.x 接口支持 str 或 List[str]
+            input=text
         )
-        # 新返回结构：response.data -> List[Embedding]
         return response.data[0].embedding

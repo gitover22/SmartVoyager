@@ -18,7 +18,11 @@ from loguru import logger
 from langchain_community.tools.tavily_search import TavilySearchResults
 import datetime
 from pydub import AudioSegment
+from transformers import AutoModel, AutoModelForSequenceClassification, AutoTokenizer
 from modelCall import OpenaiModelsCall
+import torch
+
+tokenizer = AutoTokenizer.from_pretrained("/disk0/home/zouguoqiang/SmartVoyager/model/rerank_model/bge-reranker-large")
 
 style_options = ["朋友圈", "小红书", "微博", "抖音"]
 openai_client = OpenaiModelsCall()
@@ -61,7 +65,7 @@ def process_audio_file(audio_path):
     return temp_filepath
 
 def process_audio(audio, history):
-    print(f"接收到的音频: {audio}, 类型: {type(audio)}")  # Debugging information
+    print(f"接收到的音频: {audio}, 类型: {type(audio)}")
 
     if audio is None:
         return "没有接收到音频文件，请上传一个音频文件。", history
@@ -94,13 +98,16 @@ def process_audio(audio, history):
 
 rerank_path = './model/rerank_model'
 rerank_model_name = 'BAAI/bge-reranker-large'
-# 从文本中提取城市名称，假设使用jieba进行分词和提取地名
+
+
+# 使用dataset/pdfs来实现知识库RAG
 def extract_cities_from_text(text):
-    import jieba.posseg as pseg
-    words = pseg.cut(text)
-    cities = [word for word, flag in words if flag == "ns"]
-    return cities
-# 使用citys城市名索引相关的pdf文件
+    # 简单示例：用正则匹配常见城市名
+    city_list = ["北京", "上海", "广州", "深圳", "杭州", "南京", "成都", "西安", "重庆", "合肥", "郑州", "大连", "厦门", "黄山", "青岛", "苏州", "武汉", "天津", "丽江", "三亚"]
+    found = [city for city in city_list if city in text]
+    return found
+
+# 使用cities城市名索引相关的pdf文件
 def find_pdfs_with_city(cities, pdf_directory):
     matched_pdfs = {}
     for city in cities:
@@ -117,70 +124,30 @@ def get_embedding_pdf(text, pdf_directory):
     # 根据城市名称匹配PDF文件
     city_to_pdfs = find_pdfs_with_city(cities, pdf_directory)
     return city_to_pdfs
-    
-def load_rerank_model(model_name=rerank_model_name):
-    """
-    加载重排名模型。
-    
-    参数:
-    - model_name (str): 模型的名称。默认为 'BAAI/bge-reranker-large'。
-    
-    返回:
-    - FlagReranker 实例。
-    
-    异常:
-    - ValueError: 如果模型名称不在批准的模型列表中。
-    - Exception: 如果模型加载过程中发生任何其他错误。
-    """ 
-    if not os.path.exists(rerank_path):
-        os.makedirs(rerank_path, exist_ok=True)
-    rerank_model_path = os.path.join(rerank_path, model_name.split('/')[1] + '.pkl')
-    #print(rerank_model_path)
-    logger.info('Loading rerank model...')
-    if os.path.exists(rerank_model_path):
-        try:
-            with open(rerank_model_path , 'rb') as f:
-                reranker_model = pickle.load(f)
-                logger.info('Rerank model loaded.')
-                return reranker_model
-        except Exception as e:
-            logger.error(f'Failed to load embedding model from {rerank_model_path}') 
-    else:
-        try:
-            os.system('apt install git')
-            os.system('apt install git-lfs')
-            os.system(f'git clone https://code.openxlab.org.cn/answer-qzd/bge_rerank.git {rerank_path}')
-            os.system(f'cd {rerank_path} && git lfs pull')
-            
-            with open(rerank_model_path , 'rb') as f:
-                reranker_model = pickle.load(f)
-                logger.info('Rerank model loaded.')
-                return reranker_model
-                
-        except Exception as e:
-            logger.error(f'Failed to load rerank model: {e}')
 
-def rerank(reranker, query, contexts, select_num):
-        merge = [[query, context] for context in contexts]
-        scores = reranker.compute_score(merge)
-        sorted_indices = np.argsort(scores)[::-1]
-
-        return [contexts[i] for i in sorted_indices[:select_num]]
+def rerank(model, query, contexts, select_num):
+    pairs = [[query, context] for context in contexts]
+    scores = []
+    for q, c in pairs:
+        inputs = tokenizer(q, c, return_tensors="pt", truncation=True, max_length=512)
+        with torch.no_grad():
+            outputs = model(**inputs)
+            score = outputs.logits.squeeze().item()
+            scores.append(score)
+    sorted_indices = np.argsort(scores)[::-1]
+    return [contexts[i] for i in sorted_indices[:select_num]]
 
 def embedding_make(text_input, pdf_directory):
 
     city_to_pdfs = get_embedding_pdf(text_input, pdf_directory)
     city_list = []
     for city, pdfs in city_to_pdfs.items():
-        # print(f"City: {city}")
         for pdf in pdfs:
             city_list.append(pdf)
     
     if len(city_list) != 0:
-        # all_pdf_pages = []
         all_text = ''
         for city in city_list:
-            from pdf_read import FileOperation
             file_opr = FileOperation()
             try:
                 text, error = file_opr.read(city)
@@ -202,8 +169,7 @@ def embedding_make(text_input, pdf_directory):
 
         question_vector = openai_client.get_openai_embedding(question)
         pdf_vector_list = []
-        
-        start_time = time.perf_counter()
+
 
         for i in range(len(bm25_result)):
             x = openai_client.get_openai_embedding(bm25_result[i].page_content)
@@ -222,8 +188,7 @@ def embedding_make(text_input, pdf_directory):
         for idx in top_k_indices:
             all_page = splits[idx].page_content
             emb_list.append(all_page)
-
-        reranker_model = load_rerank_model()
+        reranker_model = AutoModelForSequenceClassification.from_pretrained("/disk0/home/zouguoqiang/SmartVoyager/model/rerank_model/bge-reranker-large")    
         documents = rerank(reranker_model, question, emb_list, 3)
         reranked = ''.join(documents)
 
@@ -483,7 +448,7 @@ Question: {query}
 '''
 
 def agent_execute(query, chat_history=[]):
-    global tools, tool_names, tool_descs, prompt_tpl, llm, tokenizer
+    global tools, tool_names, tool_descs, prompt_tpl, llm
     
     agent_scratchpad = ''  # agent执行过程
     while True:
@@ -790,6 +755,25 @@ with gr.Blocks(css=custom_css) as demo:
         convert_button1.click(on_convert_click, inputs=[generated_text], outputs=[audio_output])
 
         generate_btn.click(openai_client.generate_image, inputs=prompt_input, outputs=output_image)
+
+class FileOperation:
+    """
+    文件操作类，支持读取 PDF 文件内容。
+    """
+    def read(self, path):
+        """
+        读取 PDF 文件内容。
+        :param path: PDF 文件路径
+        :return: (文本内容, 错误信息)
+        """
+        try:
+            loader = PyMuPDFLoader(path)
+            docs = loader.load()
+            # docs 是 Document 对象列表，拼接所有内容
+            text = '\n'.join([doc.page_content for doc in docs])
+            return text, None
+        except Exception as e:
+            return '', str(e)
 
 if __name__ == "__main__":
     demo.queue().launch(share=True)

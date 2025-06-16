@@ -1,7 +1,5 @@
-import torch
-import os
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoModel
 
+import os
 base_path = './model/rerank_model/'
 # download repo to the base_path directory using git
 # os.system('apt install git')
